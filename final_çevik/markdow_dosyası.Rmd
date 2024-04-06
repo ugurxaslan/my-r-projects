@@ -1,0 +1,148 @@
+---
+title: 'Proje Rapor : Dilek Durmuş 210401097'
+output:
+  html_document:
+    df_print: paged
+---
+
+# Q1 : Problem tanımı
+Şirketimiz DAppGenius , problemimiz uygulamalarımızın beklenen indirme seviyelerinin altında kalması.
+
+# Q2 : Proje Amacı
+Datasette yer alan  Category, Rating ve Installs sütunlarındaki veriler incelenerek, Rating değeri 4.0 ve üzeri olan ve Installs değeri 1M ve üzeri olan uygulamalar belirlenecek.Bu uygulamalar kategorilere göre guruplara ayrılacak böylece pazar payları ve oranları incelenecek. Elde edilen bilgiler doğrultusunda, pazar hakkında bilgi sahibi olup uygulamaları daha bilinçli bir şekilde seçeceğiz.
+
+# Q3 : Veri seti keşifsel analizi
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#Kütüphaleneri dahil ettim eğer localde indirmediyseniz install.packages("package.name") kullanınız.
+library(readr)
+library(dplyr)
+library(ggplot2)
+
+#googleplaystore.csv dosyasının çalışma dizinide mevcut olması gerekir.
+dosya_yolu <- "googleplaystore.csv"
+veri <- data.frame(read.csv(dosya_yolu))
+
+```
+Bu veri seti www.kaggle.com sitesinden elde edilmiştir ("https://www.kaggle.com/datasets/lava18/google-play-store-apps").Bu veriler google play store'dan toplanmış verilerdir.
+
+- Toplam uygulama sayısı : `r nrow(veri)`
+- Sütun sayısı : `r ncol(veri)`
+- Veri setinin ön görsellemesi aşağıda verilmiştir.
+
+<br>
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+veri
+```
+<br>
+
+Veri setini incelediğimizde problemimizi çözmemize yardımcı olacak sütunlar şunlardır; **Category, Installs, Rating**. Kalan sütunları sileceğim.
+
+- **Category** sütunu bize **char** tipinde gelmektedir. Bu tip bizim için uygundur. Bir değişiklik yapmamıza gerek yoktur. Bu sütunda herhangi bir NULL değeri bulunmamaktadır.
+
+- **Installs** sütunu **char** tipindedir. Aynı zamanda NA ve NaN değerlerinin temizlenmesi ve değerlerin "," ve "+" ifadelerinden kurtulması daha sonra numeric tipe çevrilmesi gerekmektedir.
+
+- **Rating** sütunu ise **double** formatındadır. Fakat NA ve NaN değerlerinden temizlenmesi ve 1-5 paun dışındaki verilerin silinmesi gerekmektdir.
+
+# Q4 : Veri seti ön işlemesi
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#veri setimizi temizledik geçersiz ögeler silindi
+veri_temizlenmis <- na.omit(veri)
+veri_temizlenmis <- veri_temizlenmis[, c("Category", "Installs","Rating")]
+veri_temizlenmis <- subset(veri_temizlenmis, Rating >= 1 & Rating <= 5)
+veri_temizlenmis$Installs <- as.numeric(gsub("[+,]", "", veri_temizlenmis$Installs))
+
+```
+
+**Temizlenmiş Tablo**
+
+`r veri_temizlenmis`
+- 10.841 adet veri satırından temizlik sonucu 9.366 adet veri elde ettim.
+- Install sütunu "+" ve "," karakterlerinden kurtulmuş, NA ve NaN değerleri silinmiş ve ***numeric*** tipe çevrilmiştir.
+
+- Rating sütunu 1 ve 5 arası değerler kalmış gerisi silinmiş olup NA ve NaN değerleri de atılmıştır.
+
+
+# Q5 : Veri mühendisliği 
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+veri_filtreli <- subset(veri_temizlenmis, Rating >= 4 & Rating <= 5)
+veri_filtreli <- subset(veri_filtreli, Installs > 1000000)
+veri_filtreli <- data.frame(veri_filtreli)
+
+gruplu_veri_installs <- aggregate(Installs ~ Category, data = veri_filtreli, 
+                                  FUN = function(x) c(Toplam_Indirme = sum(x)/1000000,
+                                                      Tum_Indirme_Orani = round(100 * sum(x) / sum(veri_filtreli$Installs), 2)))
+gruplu_veri_rating <- aggregate(Rating ~ Category, data = veri_filtreli, 
+                                FUN = function(x) c(Ortalama_Rating = round(mean(x),2)))
+gruplu_veri_sayilar <- aggregate(Rating ~ Category, data = veri_filtreli, FUN = length)
+colnames(gruplu_veri_sayilar)[2] <- "Count"
+gruplu_veri <- merge(gruplu_veri_installs, gruplu_veri_rating, by = "Category")
+gruplu_veri <- merge(gruplu_veri, gruplu_veri_sayilar, by = "Category")
+gruplu_veri$Market_Share<-gruplu_veri$Installs[,2]
+gruplu_veri$Installs<-gruplu_veri$Installs[,1]
+names(gruplu_veri)[names(gruplu_veri) == "Installs"] <- "Installs_Million"
+gruplu_veri$Market_Share_per_App <- round(gruplu_veri$Market_Share/gruplu_veri$Count,2)
+rm(gruplu_veri_installs,gruplu_veri_rating,gruplu_veri_sayilar,veri,dosya_yolu)
+
+
+
+```
+
+
+Şimdi ise temizlenmiş kullanılabilir verimizin içinden isteğimize uygun olan değerleri filtreleyeceğim. Installs değeri en az **1 milyon** olan ve Rating değeri en az **4.0** olan uygulamalarımızı alacağım. Bu aşamaya kadar uygulamaların isimleri önemli değil sadece kategorilerini bilmemiz yeterli.
+
+**Filtrelenmiş Tablo**
+`r veri_filtreli`
+
+
+
+Bu aşamada, her kategorinin toplam **install** sayısı belirlendi, ortalama **rating** değerleri hesaplandı ve her kategoride kaç uygulama olduğu ölçüldü. Bu veriler üzerinden her kategorinin ve kategorilere göre uygulama başına düşen pazar payı hesaplamaları yapıldı ve tabloya aktarıldı.
+
+**Gruplandırılmış tablo**
+
+`r gruplu_veri`
+
+
+# Q6 : Veri analizi
+Buraya kadar analizlerimi tamamladım ve gruplara göre pazar paylarını araştırdım ve aşağıdaki pasta grafiğini elde ettim.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+temp<-gruplu_veri
+temp$Category <- ifelse(temp$Market_Share < 5, "Other",temp$Category)
+temp <- aggregate(Market_Share ~ Category, data = temp, 
+                                FUN = function(x) sum(x))
+temp<-temp[order(temp$Market_Share, decreasing = TRUE), ]
+temp$Market_Share <- temp$Market_Share / sum(temp$Market_Share) * 100
+pasta_grafigi <- pie(temp$Market_Share, labels = sprintf("%s %.1f%%", temp$Category, temp$Market_Share),cex = 0.8, col = rainbow(length(temp$Category)))
+title("Kategorilerin Pazar Payıları")
+```
+
+
+Aşağıdaki histogramda, her bir kategoride belirli bir sayıda uygulamanın bulunduğunu ve her uygulamanın kendi kategorisindeki pazar payını araştırdım. Bu pazar payı oranları, tüm pazarın genel oranına eşittir. Yani, her bir değer aşağıdaki X kategorisindeki bir uygulamanın ortalama pazar payını ifade etmektedir.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+temp <- gruplu_veri %>%
+  arrange(desc(Market_Share_per_App))
+temp <- head(temp, 10)
+par(mar = c(7, 5, 2, 2) + 0.1)  # Alt, üst, sol, sağ marjları ayarla
+barplot(height = temp$Market_Share_per_App,
+        names.arg = temp$Category,
+        main = "İlk 10 Kategorinin Uygulama Başına Pazar Payı",
+        ylab = "Pazar Payı (%)",
+        col = "pink",
+        horiz = FALSE,
+        ylim = c(0, 0.15),
+        cex.names = 0.6,
+        las = 2) 
+
+```
+
+# Q7 : Sonuç değerlendirme, tavsiyeler
+
+---
+
+Projemizdeki temel hedef, popüler kategorilerdeki uygulamaları belirleyerek pazar stratejimizi bu yönde şekillendirmekti. Elde ettiğimiz sonuçlar istediğimiz doğrultuda, ancak veri setindeki bazı yanıltıcı durumlar göz önünde bulundurulmalıdır. Özellikle, 'Installs' sütunundaki verilerin dağılım aralıkları oldukça geniştir, 1.000.000'den 1.000.000.000'e kadar uzanmaktadır. Bu durum, kesin verilere ulaşmayı zorlaştırabilir ve skaladaki geniş aralıklar nedeniyle yanıltıcı sonuçlara yol açabilir. Ancak, projemde sayısal değerlerden ziyade oranlar üzerinden çalıştığım için bu olası yanılgıyı azalttım. Veri setimizdeki dağılım aralıklarını azaltarak veya doğrudan sayılar kullanarak daha sağlıklı sonuçlar elde edebiliriz.
+
+Sonuç olarak, projemizden elde ettiğimiz verilere dayanarak, uygulama kategorilerinin pazar payı oranlarına odaklanarak en iyi performans gösteren kategorileri belirledik. Bu kategoriler sırasıyla şunlardır: Game (22.11), Communication (20.76), Social (8.87) ve Productivity (8.84). Ayrıca, her bir uygulama kategorisinin başına düşen pazar payı oranlarına bakarak en etkili kategorileri belirledik: Communication (0.13), Social (0.08), Productivity (0.07) ve Travel/Local (0.06).
+
+Bu sonuçlara dayanarak, pazar payımızı genişletmek için daha iyi uygulamaları seçerek stratejimizi güçlendireceğiz.
